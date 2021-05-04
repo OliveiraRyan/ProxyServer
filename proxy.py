@@ -5,6 +5,15 @@ import socket
 import select
 from datetime import datetime
 
+# python proxy.py 120
+
+# http://localhost:8888/the.web.page/to/visit/
+
+# Host Name: localhost
+# PORT: 8888
+
+# Only handle GET requests
+
 _port = 8888
 _hostname = "localhost"
 _max_msg_size = 256
@@ -34,31 +43,6 @@ def handle_message(sock, sockets):
         to_remove.append(sock)
 
     return to_remove
-
-# python proxy.py 120
-
-# http://localhost:8888/the.web.page/to/visit/
-
-# Host Name: localhost
-# PORT: 8888
-
-# Only handle GET requests
-
-
-# Here is how you can get time string given the timestamp in Python:
-# time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
-
-
-
-# Step 1: Forward HTTP requests and responses without caching
-
-# Step 2: Enable the TCP server to handle simultaneous connections
-
-# Step 3: Enable caching
-
-# Step 4: Make cache items expire
-
-# Step 5: Modify the HTTP response
 
 def parse_header(request):
     headers = request.split('\n')
