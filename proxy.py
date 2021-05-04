@@ -3,10 +3,12 @@ import os
 import time
 import socket
 import select
+from datetime import datetime
 
 _port = 8888
 _hostname = "localhost"
 _max_msg_size = 256
+
 
 def setup_server(hostname, port):
     '''Return a server socket bound to the specified port.'''
@@ -16,22 +18,6 @@ def setup_server(hostname, port):
     connection.bind((hostname, port))
     connection.listen(5)
     return connection
-
-def send_messages(sockets, msg):
-    '''Send bytes msg to each socket in the dict sockets and return a list of sockets
-    which have died.'''
-
-    msg = bytes(msg, encoding="UTF-8")
-    to_remove = []
-    for sock in sockets:
-        total_sent = 0
-        try:
-            while total_sent < len(msg):
-                sent = sock.send(msg[total_sent: total_sent + _max_msg_size])
-                total_sent += sent
-        except socket.error:
-            to_remove.append(sock)
-    return to_remove
 
 def handle_message(sock, sockets):
     '''Process the message sent on socket sock and then return a list of client 
@@ -43,29 +29,9 @@ def handle_message(sock, sockets):
         return [sock]
 
     firstfield = msg.strip().split()[0]
-    if firstfield.startswith("<") or len(firstfield) == 0 or \
+    if len(firstfield) == 0 or \
        (sockets[sock][1] == None and firstfield != "/user"):
         to_remove.append(sock)
-
-    elif firstfield.startswith("/"):
-        remainder = msg.strip()[len(firstfield):].strip()
-        if firstfield == "/user" and sockets[sock][1] == None:
-            if len(remainder) > 0:
-                sockets[sock] = (sockets[sock][0], remainder)
-                to_remove = send_messages(sockets, "%s has connected." % remainder)
-            else:
-                to_remove.append(sock)
-        elif firstfield == "/users":
-            to_remove = send_messages([sock], "%d users are online." % (len(sockets)))
-        elif firstfield == "/bye":
-            to_remove = send_messages([sock], "Simonsays ...")
-            to_remove += send_messages(sockets, "%s has left the room." % sockets[sock][1])
-            to_remove.append(sock)
-        else:
-            to_remove = send_messages([sock], "Server says: Nice try!")
-
-    else:
-        to_remove = send_messages(sockets, "%s says: %s" % (sockets[sock][1], msg.strip()))
 
     return to_remove
 
@@ -102,13 +68,21 @@ def parse_header(request):
     return top_header, method, filename
 
 def fetch_from_cache(filename):
-    # Convert to match to cache-saving naming convention.
-    if filename[-1] == '/':
-        filename = filename + "index.html"
     filename = filename[0] + filename[1:].replace("/", "-")
+    
+    time_until_expire = None
+    if len(sys.argv) == 2:
+        time_until_expire = int(sys.argv[1])
+
     try:
         if os.path.exists("cache"):
-            file_input = open('cache' + filename, 'r')
+            if time_until_expire:
+                print("filename to fetch from cache: " + 'cache' + filename)
+                last_mod = os.path.getmtime('cache' + filename)
+                expiration_time = last_mod + time_until_expire
+                if (expiration_time <= time.time()):
+                    return None
+            file_input = open('cache' + filename, 'rb')
             content = file_input.read()
             file_input.close()
             return content
@@ -119,52 +93,68 @@ def save_in_cache(filename, content):
     if not os.path.exists("cache"):
         os.mkdir('cache')
         os.chmod('cache', 0o711)
+
     # Cache-saving naming convention.
     filename = filename[0] + filename[1:].replace("/", "-")
-    file_to_save = open('cache' + filename, 'w')
+    print("filename to save in cache: " + 'cache' + filename)
+    file_to_save = open('cache' + filename, 'wb')
     file_to_save.write(content)
     file_to_save.close()
 
 def fetch_from_server(filename):
     try:
-        # old code
-        '''
+##        if filename[-4:] == ".ico":
+##            return None
+        if filename[-1] == '/':
+            filename = filename + "index.html"
         filename_split = filename.split('/')
+        if len(filename_split) == 2:
+            filename_split.append("index.html")
         host = filename_split[1]
-        web_file = "/"
+        file_path = ""
         for subfile in filename_split[2:]:
             if subfile == "":
                 break
             else:
-                web_file = web_file + subfile + "/"
-                '''
-
-        filename_split = filename.split('/', 2)
-        host = filename_split[1]
-        web_file = '/' + filename_split[2]
+                file_path = file_path + "/" + subfile
 
         # Create socket to webbrowser
         # Create a TCP/IP socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        print("Host before connect: " + host)
+        print(filename_split)
         sock.connect((host, 80))
-        print("HOST:{}".format(host))
-        print("FILE:{}".format(web_file))
-        connection.setblocking(0)
-        get_request = "GET {0} HTTP/1.1\r\nHost: {1}\r\n\r\n".format(web_file, host)
-        print("GET REQUEST:{}".format(get_request))
+        print("Connecting to webbrowser...")
+        print("File: " + file_path)
+        print("Host: " + host)
+        get_request = "GET {0} HTTP/1.1\r\nHost: {1}\r\n\r\n".format(file_path, host)
         sock.sendall(get_request.encode("UTF-8"))
-        total_data = ""
+
+        content = b""
+        cc=0
         while True:
-            data = sock.recv(_max_msg_size).decode("UTF-8")
-            if data == "":
+            # print("reading.. " + str(cc))
+            cc+=1
+            data = sock.recv(_max_msg_size)
+            if filename.endswith("/index.html"):
+                print("reading.. " + str(cc))
+                print(data)
+            # print(data)
+            if not data:
+                print("break")
                 break
-            total_data = total_data + data
-        content = total_data
-        print("content:")
-        print(content)
+            content = content + data
+        #content = total_data
+        print("before close")
         sock.close()
+        print("after close")
+        if filename.endswith("/index.html"):
+            # print(content)
+            return html_injection(content)
         return content
     except:
+        print(sys.exc_info()[0])
+        print("Something broke")
         return None
     
 def fetch_file(filename):
@@ -182,43 +172,51 @@ def fetch_file(filename):
         else:
             return None
 
+def html_injection(content):
+    now = datetime.now() # Current date and time
+    dt = '<body><p style="z-index:9999; position:fixed; top:20px; left:20px; width:200px; height:100px; \
+        background-color:yellow; padding:10px; font-weight:bold;">Last cached:<br/>{}</p>'.format(now.strftime('%Y-%m-%d %H:%M:%S'))
+    return content.replace(b'<body>', bytes(dt, 'ASCII'))
+
 if __name__ == "__main__":
     connection = setup_server(_hostname, _port)
 
-    inputs = [connection, sys.stdin]
+    inputs = [connection]
     clients = {}
     while 1:
         inps, outs, errors = select.select(inputs, [], [])
 
         for inp in inps:
-            if inp == sys.stdin: # Terminal input
-                send_messages(clients, "<SERVER MESSAGE> " + sys.stdin.readline().rstrip())
-            elif inp == connection: # New connection
+            if inp == connection: # New connection
                 (client, address) = connection.accept()
                 clients[client] = (address, None)
                 inputs.append(client)
                 print("Accepted new client", address)
-                msg = client.recv(_max_msg_size).decode("UTF-8")
+                msg = b''
+                while True:
+                    client_msg = client.recv(_max_msg_size)
+                    msg = msg + client_msg
+                    if not client_msg or b'\r\n\r\n' in client_msg:
+                        break
+                msg = msg.decode("UTF-8")
+                if msg == '':
+                    break
                 print("msg:")
                 print(msg)
-                # if msg == '':
-                #     continue
                 top_header, method, filename = parse_header(msg)
                 print("top_header:")
                 print(top_header)
                 print("method:")
                 print(method)
-                print("filename:")
+                print("filename after parse:")
                 print(filename)
-                if filename == '/': 
+                if filename == '/':
                     filename = filename + 'index.html'
                 content = fetch_file(filename)
-                print("past fetch")
-                if content:
-                    response = 'HTTP/1.1 200 OK\r\n' + content
-                else:
-                    response = 'HTTP/1.1 404 NOT FOUND\r\n File Not Found'
-                client.sendall(response.encode("UTF-8"))
+                print("FILE FETCHED!")
+                if not content:
+                    content = b'HTTP/1.1 404 NOT FOUND\r\n File Not Found'
+                client.sendall(content)
             else:
                 try:
                     to_remove = handle_message(inp, clients)
@@ -226,10 +224,6 @@ if __name__ == "__main__":
                     to_remove = [inp]
                 for client in to_remove:
                     print("Dropping client", clients[client])
-                    try:
-                        send_messages([client], "/bye")
-                    except socket.error:
-                        pass
                     del clients[client]
                     inputs.remove(client) 
                     client.close()
