@@ -127,20 +127,31 @@ def save_in_cache(filename, content):
 
 def fetch_from_server(filename):
     try:
+        # old code
+        '''
         filename_split = filename.split('/')
         host = filename_split[1]
-        file = "/"
+        web_file = "/"
         for subfile in filename_split[2:]:
             if subfile == "":
                 break
             else:
-                file = file + subfile + "/"
+                web_file = web_file + subfile + "/"
+                '''
+
+        filename_split = filename.split('/', 2)
+        host = filename_split[1]
+        web_file = '/' + filename_split[2]
+
         # Create socket to webbrowser
         # Create a TCP/IP socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((host, 80))
+        print("HOST:{}".format(host))
+        print("FILE:{}".format(web_file))
         connection.setblocking(0)
-        get_request = "GET {0} HTTP/1.1\r\nHost: {1}\r\n\r\n".format(file, host)
+        get_request = "GET {0} HTTP/1.1\r\nHost: {1}\r\n\r\n".format(web_file, host)
+        print("GET REQUEST:{}".format(get_request))
         sock.sendall(get_request.encode("UTF-8"))
         total_data = ""
         while True:
@@ -190,6 +201,8 @@ if __name__ == "__main__":
                 msg = client.recv(_max_msg_size).decode("UTF-8")
                 print("msg:")
                 print(msg)
+                # if msg == '':
+                #     continue
                 top_header, method, filename = parse_header(msg)
                 print("top_header:")
                 print(top_header)
@@ -197,9 +210,10 @@ if __name__ == "__main__":
                 print(method)
                 print("filename:")
                 print(filename)
-                if filename == '/':
+                if filename == '/': 
                     filename = filename + 'index.html'
                 content = fetch_file(filename)
+                print("past fetch")
                 if content:
                     response = 'HTTP/1.1 200 OK\r\n' + content
                 else:
