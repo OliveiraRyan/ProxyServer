@@ -132,7 +132,7 @@ def fetch_from_server(filename):
         print("before close")
         sock.close()
         print("after close")
-        if filename.endswith("/index.html"):
+        if filename.endswith(".html"):
             # print(content)
             return html_injection(content)
         return content
